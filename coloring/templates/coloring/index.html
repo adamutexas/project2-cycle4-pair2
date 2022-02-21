@@ -1,0 +1,288 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  	<title>P3 Coloring</title>
+
+	<script type="text/javascript" src="{% static 'coloring/vendors/jquery/jquery-3.3.1.min.js' %}"></script>
+	<script type="text/javascript" src="{% static 'coloring/vendors/paper/paper-full.min.js' %}"></script>
+  <script type="text/javascript" src="{% static 'coloring/vendors/hammer/hammer.min.js' %}"></script>
+  <script type="text/javascript" src="{% static 'coloring/vendors/hammer/jquery.hammer.js' %}"></script>
+
+	<style type="text/css">
+		#color-palette {
+      border-radius: 0px 100% 0px 0px;
+			background-color: #C4A484;
+			position: absolute;
+			bottom: 0px;
+      left: 0px;
+		}
+
+		.swatch {
+			width: 30%;
+			height: 30%;
+			-moz-border-radius: 100%;
+			-webkit-border-radius: 100%;
+			border-radius: 100%;
+			margin: 0px;
+      align-items: center;
+      display: flex;
+      position: absolute;
+      background-color: transparent;
+		}
+
+    .selected {
+      background-color: green;
+    }
+
+    .pupil {
+      width: 80%;
+			height: 80%;
+      -moz-border-radius: 100%;
+			-webkit-border-radius: 100%;
+			border-radius: 100%;
+			margin: 0 auto;
+    }
+
+    .help {
+      width: 10%;
+      height: 10%;
+      bottom: 0px;
+      left: 100%;
+      display: inline-block;
+      position: absolute;
+      background-color: grey;
+      text-align: center;
+      font-size: 150%;
+
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      -khtml-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none
+    }
+
+    .help-text {
+      white-space: nowrap;
+      height: 10%;
+      line-height: 200%;
+      bottom: 0px;
+      left: 115%;
+      position: absolute;
+      background-color: grey;
+      text-align: center;
+      font-size: 100%;
+    }
+
+		#myCanvas {
+			padding-left: 0;
+      padding-right: 0;
+      margin-left: auto;
+      margin-right: auto;
+      display: block;
+		}
+	</style>
+
+	<script type="text/javascript" canvas="canvas">
+
+
+		window.onload = function() {
+
+      //width/height of pallette in pixels, should be dynamically set
+      const palletteradius = 0.3*document.body.clientWidth;
+
+      const swatchradius = 15; //swatch radius as a percentage of pallette
+      const unitradius = 2*swatchradius; //distance between arcs of colors
+      const radiusbias = 4*swatchradius; //distance of first arc from bottom left corner
+      const leftbias = -1.8*swatchradius; //left position added to all swatches
+      const botbias = -1.8*swatchradius; //bottom position added to all swatches
+
+			var canvas = document.getElementById('myCanvas');
+
+			// coloring page
+			var mandala = {
+				item: null,
+				lastClicked: null,
+				filePath: "{% static 'coloring/images/mandala-freepik.svg' %}"
+			};
+
+			// color palette
+			class palette {
+
+        //create pallette
+        //options: list of colors to use
+        //arcs: length of each arc going around the pallette
+        //swatch: default selection
+        constructor(options, arcs, swatch = 0) {
+          this.current = "#FFFFFF"; //placeholder current color
+          this.$container = $('#color-palette');
+
+          this.html(options, arcs);
+
+          this.$swatch = this.getSwatchById(swatch);
+          this.selectSwatch(this.$swatch);
+        }
+
+        //actually fill the main html
+        html(options, arcs) {
+
+          //check params
+          if((arcs.length == 0 && options.length != 0) ||
+              arcs.reduce((a, b) => a + b) != options.length) {
+            throw Error("sum(arcs) != options.length");
+            return;
+          }
+
+          this.$container.html(" ");
+          this.$container.css("width", palletteradius+"px");
+          this.$container.css("height", palletteradius+"px");
+
+          //help text thingie
+          const $help = $("<div>").text("❓").addClass("help");
+          this.$container.append($help); //help thing
+          const $helptext = $("<div>").addClass("help-text");
+          $helptext.text("Press and hold a color to change to another color.");
+          
+          this.$container.append($helptext);
+          $helptext.hide();
+
+          var timeout = 0;
+          $help.each(function () {
+            //select color on tap 
+            new Hammer(this).on("tap", function() {
+              clearTimeout(timeout);
+              $helptext.show();
+              //e.stopPropagation();
+              timeout = setTimeout(() => $helptext.hide(), 3000);
+            });
+          });
+          /*$("body").click( function() {
+            $helptext.hide();
+          });*/
+
+          var p = this;
+          var id = 0;
+
+          // create a swatch for each color
+          //for loop goes by arcs (r) and then each color in the arc (a)
+          //default is 2 arcs with 2 & 3 colors each
+          for (var r = 0; r < arcs.length; r++) {
+            for(var a = 0; a < arcs[r]; a++) {
+              const $elem = $("<div>").attr("id","swatch-"+id).addClass("swatch");
+
+              //generate polar coords based on arc position
+              const theta = (a+1)*(Math.PI/2)/(1+arcs[r]);
+              const rad = unitradius*r+radiusbias;
+
+              //assign polar position
+              $elem.css("left", (~~(rad*Math.cos(theta) + leftbias))+"%");
+              $elem.css("bottom", (~~(rad*Math.sin(theta) + botbias))+"%");
+
+              //part of the swatch with actual color (the rest is the selection halo)
+              const $pupil = $("<div>").addClass("pupil");
+              $pupil.css("background-color", options[id]);
+              $elem.append($pupil);
+
+              //hammer gestures callback functions for swatch
+              $elem.each(function () {
+                //select color on tap 
+                new Hammer(this).on("tap", function() {
+                  p.selectSwatch($elem);
+                });
+
+                //change color on press & hold
+                new Hammer(this).on("press", function() {
+                  //TODO: get color UI
+                  p.assignSwatch($elem, "#FFFFFF"); //assign new color
+                });
+              });
+              this.$container.append($elem);
+              id++;
+            }
+          }
+        }
+
+        //select color from color palette
+        selectSwatch($swatch) {
+          this.$swatch.removeClass("selected"); //remove old selection
+          $swatch.addClass("selected"); //add new selection
+
+          this.$swatch = $swatch;
+          this.current = $swatch.children().css("background-color"); //get color of pupil in pallette
+        }
+
+        //assign color to swatch on palette
+        assignSwatch($swatch, color) {
+          
+          $swatch.children().css("background-color", color);
+
+          //case where changed color was the selected color
+          if($swatch.is(this.$swatch)) {
+            this.current = color;
+          }
+        }
+
+        getSwatchById(num) {
+          return $("#swatch-"+num);
+        }
+			}
+
+      //create new pallette with these default colors
+      var cp = new palette(["#000000", "#808080", "#0000FF", "#FF0000", "#FFFF00"], [2,3]);
+
+			function myCustomInteraction() {
+				var tool = new paper.Tool();
+
+        tool.onMouseDown = function (event) {
+				    var hit = mandala.item.hitTest(event.point, { tolerance: 10, fill: true });
+				    if (hit) {
+				    		//on hit, fill item with current color
+				        hit.item.fillColor = cp.current;
+				    }
+				}
+
+        //doesn't work idk
+        /*//hammer gesture callback functions for canvas
+				new Hammer(canvas).on("tap", function (event) {
+            console.log($("#myCanvas").position());
+            const canvasPos = $("#myCanvas").position();
+            const point = new paper.Point(event.center.x - canvasPos.left, event.center.y - canvasPos.top);
+            console.log(canvasPos.x);
+				    var hit = mandala.item.hitTest(point, { tolerance: 1, fill: true });
+				    if (hit) {
+				    		//on hit, fill item with current color
+				        hit.item.fillColor = cp.current;
+				    }
+				});*/
+			}
+
+			function init(custom){
+				paper.setup(canvas);
+
+				paper.project.importSVG(mandala.filePath, function(item) {
+					mandala.item = item._children["design-freepik"];
+				    paper.project.insertLayer(0,mandala.item);
+
+				    if (custom) {
+				    	myCustomInteraction();
+				    } else {
+				    	myGradientInteraction();
+				    }
+
+				});
+			}
+
+      
+			init(true);
+		}
+	</script>
+</head>
+<body style="overflow: hidden">
+
+	<canvas id="myCanvas" width="750px" height="750px"></canvas>
+	<div id="color-palette"></div>
+</body>
+</html>
